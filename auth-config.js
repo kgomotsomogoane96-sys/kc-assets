@@ -23,193 +23,283 @@ const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
 // UI refs
-const loginScreen = document.getElementById("login-screen");
-const dashboard   = document.getElementById("dashboard");
-const loginBtn    = document.getElementById("login-btn");
-const logoutBtn   = document.getElementById("logout-btn");
-const userEmail   = document.getElementById("user-email");
-const loginError  = document.getElementById("login-error");
-const dropZone    = document.getElementById("drop-zone");
-const fileInput   = document.getElementById("file-input");
-const uploadStatus= document.getElementById("upload-status");
-const grid        = document.getElementById("grid");
-const countEl     = document.getElementById("count");
-const emptyMsg    = document.getElementById("empty-msg");
-const refreshBtn  = document.getElementById("refresh-btn");
+const who = document.getElementById("who");
+const loginBtn = document.getElementById("loginBtn");
+const loginBtn2 = document.getElementById("loginBtn2");
+const logoutBtn = document.getElementById("logoutBtn");
+const loginView = document.getElementById("loginView");
+const dashView = document.getElementById("dashView");
+const loginErr = document.getElementById("loginErr");
+
+const drop = document.getElementById("drop");
+const file = document.getElementById("file");
+const log = document.getElementById("log");
+
+const baseUrlEl = document.getElementById("baseUrl");
+const copyBase = document.getElementById("copyBase");
+
+const countEl = document.getElementById("count");
+const statsTop = document.getElementById("statsTop");
+const grid = document.getElementById("grid");
+const empty = document.getElementById("empty");
+const refresh = document.getElementById("refresh");
+const search = document.getElementById("search");
+
+// Viewer
+const viewer = document.getElementById("viewer");
+const vframe = document.getElementById("vframe");
+const vtitle = document.getElementById("vtitle");
+const vClose = document.getElementById("vClose");
+const vCopy = document.getElementById("vCopy");
 
 let currentUser = null;
+let allImages = [];
+let lastViewerUrl = "";
 
-loginBtn.addEventListener("click", async () => {
-  loginError.classList.add("hidden");
+// Base URL
+const baseUrl = `${location.origin}/api/img/`;
+baseUrlEl.textContent = baseUrl;
+
+copyBase.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(baseUrl);
+  toastOk("Base URL copied.");
+});
+
+// Auth actions
+async function doLogin() {
+  loginErr.style.display = "none";
   try {
     await signInWithPopup(auth, provider);
   } catch (e) {
-    loginError.textContent = "Sign-in failed: " + e.message;
-    loginError.classList.remove("hidden");
+    loginErr.textContent = "Sign-in failed: " + e.message;
+    loginErr.style.display = "block";
   }
-});
-
+}
+loginBtn.addEventListener("click", doLogin);
+loginBtn2?.addEventListener("click", doLogin);
 logoutBtn.addEventListener("click", () => signOut(auth));
 
-onAuthStateChanged(auth, (user) => {
-  if (user && user.email === ADMIN_EMAIL) {
-    currentUser = user;
-    loginScreen.classList.add("hidden");
-    dashboard.classList.remove("hidden");
-    userEmail.textContent = user.email;
-    logoutBtn.style.display = "inline-block";
-    loadImages();
-  } else if (user) {
-    signOut(auth);
-    loginError.textContent = `Access denied for ${user.email}. Only the admin account can log in.`;
-    loginError.classList.remove("hidden");
-  } else {
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
     currentUser = null;
-    loginScreen.classList.remove("hidden");
-    dashboard.classList.add("hidden");
-    userEmail.textContent = "";
+    who.textContent = "Not signed in";
+    loginBtn.style.display = "inline-flex";
     logoutBtn.style.display = "none";
+    loginView.style.display = "block";
+    dashView.style.display = "none";
+    return;
   }
+
+  // Front-end guard for nicer UX (backend still enforces)
+  if (user.email !== ADMIN_EMAIL) {
+    await signOut(auth);
+    loginErr.textContent = `Access denied for ${user.email}. Admin only.`;
+    loginErr.style.display = "block";
+    loginView.style.display = "block";
+    dashView.style.display = "none";
+    return;
+  }
+
+  currentUser = user;
+  who.textContent = user.email;
+  loginBtn.style.display = "none";
+  logoutBtn.style.display = "inline-flex";
+  loginView.style.display = "none";
+  dashView.style.display = "block";
+
+  await loadImages();
 });
 
-// ---------- API helpers ----------
+// API helpers
 async function authHeaders() {
-  const token = await currentUser.getIdToken();
+  // force refresh helps avoid edge cases
+  const token = await currentUser.getIdToken(true);
   return { Authorization: "Bearer " + token };
 }
 
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1024 / 1024).toFixed(2) + " MB";
+}
+
+function toastOk(msg) {
+  const line = document.createElement("div");
+  line.className = "ok";
+  line.textContent = "✓ " + msg;
+  log.appendChild(line);
+  setTimeout(() => line.remove(), 4500);
+}
+
+function toastErr(msg) {
+  const line = document.createElement("div");
+  line.className = "err";
+  line.textContent = "× " + msg;
+  log.appendChild(line);
+  setTimeout(() => line.remove(), 7000);
+}
+
 async function loadImages() {
-  grid.innerHTML = "";
-  emptyMsg.classList.add("hidden");
   try {
     const res = await fetch("/api/list", { headers: await authHeaders() });
-    if (!res.ok) throw new Error("List failed: " + res.status);
+    if (!res.ok) throw new Error(`List failed (HTTP ${res.status})`);
     const data = await res.json();
-    renderGrid(data.images || []);
+    allImages = data.images || [];
+    render();
   } catch (e) {
-    showStatus("Failed to load images: " + e.message, "err");
+    toastErr(e.message);
   }
 }
 
-function renderGrid(items) {
+function render() {
+  const q = (search.value || "").trim().toLowerCase();
+  const items = q
+    ? allImages.filter(x => x.key.toLowerCase().includes(q))
+    : allImages;
+
+  countEl.textContent = String(items.length);
+  statsTop.textContent = `Library · ${items.length} images`;
+
   grid.innerHTML = "";
-  countEl.textContent = items.length;
-  if (items.length === 0) {
-    emptyMsg.classList.remove("hidden");
-    return;
-  }
+  empty.style.display = items.length ? "none" : "block";
+
   for (const it of items) {
     const url = `${location.origin}/api/img/${encodeURIComponent(it.key)}`;
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `
-      <div class="thumb" style="background-image:url('${url}')"></div>
-      <div class="info">
+
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    tile.innerHTML = `
+      <div class="thumb"><img loading="lazy" src="${url}" alt=""></div>
+      <div class="meta">
         <div class="name" title="${it.key}">${it.key}</div>
-        <div class="meta">${formatSize(it.size)} · ${new Date(it.uploaded).toLocaleDateString()}</div>
-        <div class="actions">
-          <button class="ghost copy-btn" data-url="${url}">Copy URL</button>
-          <button class="danger del-btn" data-key="${it.key}">Delete</button>
+        <div class="sub">
+          <span>${fmtSize(it.size)}</span>
+          <span>${new Date(it.uploaded).toLocaleDateString()}</span>
         </div>
       </div>
+      <div class="actions">
+        <button class="btn ghost" data-copy="${url}">Copy URL</button>
+        <button class="btn danger" data-del="${it.key}">Delete</button>
+      </div>
     `;
-    grid.appendChild(card);
-  }
 
-  grid.querySelectorAll(".copy-btn").forEach(b => {
-    b.addEventListener("click", () => {
-      navigator.clipboard.writeText(b.dataset.url);
-      const old = b.textContent;
-      b.textContent = "Copied!";
-      setTimeout(() => (b.textContent = old), 1200);
+    // Open viewer when clicking the thumbnail/meta area
+    tile.querySelector(".thumb").addEventListener("click", () => openViewer(it.key, url));
+    tile.querySelector(".meta").addEventListener("click", () => openViewer(it.key, url));
+
+    tile.querySelector("[data-copy]").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await navigator.clipboard.writeText(url);
+      toastOk("URL copied.");
     });
-  });
 
-  grid.querySelectorAll(".del-btn").forEach(b => {
-    b.addEventListener("click", async () => {
-      if (!confirm(`Delete "${b.dataset.key}"?`)) return;
+    tile.querySelector("[data-del]").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${it.key}"?`)) return;
+
       try {
-        const res = await fetch("/api/delete?key=" + encodeURIComponent(b.dataset.key), {
+        const res = await fetch("/api/delete?key=" + encodeURIComponent(it.key), {
           method: "DELETE",
           headers: await authHeaders(),
         });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        showStatus("Deleted.", "ok");
-        loadImages();
-      } catch (e) {
-        showStatus("Delete failed: " + e.message, "err");
+        if (!res.ok) throw new Error(`Delete failed (HTTP ${res.status})`);
+        toastOk("Deleted.");
+        await loadImages();
+      } catch (err) {
+        toastErr(err.message);
       }
     });
-  });
+
+    grid.appendChild(tile);
+  }
 }
 
-// ---------- Upload ----------
-dropZone.addEventListener("click", () => fileInput.click());
-dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag"); });
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag"));
-dropZone.addEventListener("drop", e => {
+// Upload
+drop.addEventListener("click", () => file.click());
+drop.addEventListener("dragover", (e) => {
   e.preventDefault();
-  dropZone.classList.remove("drag");
+  drop.classList.add("drag");
+});
+drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+drop.addEventListener("drop", (e) => {
+  e.preventDefault();
+  drop.classList.remove("drag");
   handleFiles(e.dataTransfer.files);
 });
-fileInput.addEventListener("change", e => handleFiles(e.target.files));
-refreshBtn.addEventListener("click", loadImages);
+file.addEventListener("change", (e) => handleFiles(e.target.files));
 
-async function handleFiles(files) {
-  const list = Array.from(files);
-  for (const f of list) {
+async function handleFiles(fileList) {
+  const files = Array.from(fileList || []);
+  for (const f of files) {
     if (!f.type.startsWith("image/")) {
-      showStatus(`Skipped ${f.name}: not an image`, "err");
+      toastErr(`Skipped ${f.name}: not an image`);
       continue;
     }
     if (f.size > 25 * 1024 * 1024) {
-      showStatus(`Skipped ${f.name}: over 25MB`, "err");
+      toastErr(`Skipped ${f.name}: over 25MB`);
       continue;
     }
     await uploadOne(f);
   }
-  loadImages();
+  await loadImages();
 }
 
-async function uploadOne(file) {
-  const progId = "u" + Math.random().toString(36).slice(2, 8);
-  const div = document.createElement("div");
-  div.className = "upload-progress";
-  div.id = progId;
-  div.textContent = `Uploading ${file.name}...`;
-  uploadStatus.appendChild(div);
+async function uploadOne(f) {
+  const line = document.createElement("div");
+  line.textContent = `… Uploading ${f.name}`;
+  log.appendChild(line);
 
   try {
     const headers = await authHeaders();
-    headers["X-Filename"] = encodeURIComponent(file.name);
-    headers["Content-Type"] = file.type;
+    headers["X-Filename"] = encodeURIComponent(f.name);
+    headers["Content-Type"] = f.type;
 
     const res = await fetch("/api/upload", {
       method: "POST",
       headers,
-      body: file,
+      body: f,
     });
-    if (!res.ok) throw new Error("HTTP " + res.status + " — " + await res.text());
+
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Upload failed (HTTP ${res.status}) — ${t}`);
+    }
+
     const data = await res.json();
-    div.textContent = `✓ ${file.name} → ${data.key}`;
-    div.style.color = "var(--ok)";
-    setTimeout(() => div.remove(), 4000);
+    line.className = "ok";
+    line.textContent = `✓ ${f.name} → ${data.key}`;
+    setTimeout(() => line.remove(), 5000);
   } catch (e) {
-    div.textContent = `✗ ${file.name}: ${e.message}`;
-    div.style.color = "var(--danger)";
+    line.className = "err";
+    line.textContent = `× ${f.name} — ${e.message}`;
+    setTimeout(() => line.remove(), 9000);
   }
 }
 
-function showStatus(msg, kind = "ok") {
-  const div = document.createElement("div");
-  div.className = "status " + kind;
-  div.textContent = msg;
-  uploadStatus.appendChild(div);
-  setTimeout(() => div.remove(), 4000);
-}
+refresh.addEventListener("click", loadImages);
+search.addEventListener("input", render);
 
-function formatSize(bytes) {
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024 * 1024) return (bytes/1024).toFixed(1) + " KB";
-  return (bytes/1024/1024).toFixed(2) + " MB";
+// Viewer
+function openViewer(key, url) {
+  lastViewerUrl = url;
+  vtitle.textContent = key;
+  vframe.innerHTML = `<img src="${url}" alt="">`;
+  viewer.classList.add("open");
+}
+vClose.addEventListener("click", closeViewer);
+viewer.addEventListener("click", (e) => {
+  if (e.target === viewer) closeViewer();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeViewer();
+});
+vCopy.addEventListener("click", async () => {
+  if (!lastViewerUrl) return;
+  await navigator.clipboard.writeText(lastViewerUrl);
+  toastOk("URL copied.");
+});
+function closeViewer() {
+  viewer.classList.remove("open");
+  vframe.innerHTML = "";
+  lastViewerUrl = "";
 }
