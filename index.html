@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KC Assets — Image Host</title>
+<style>
+  :root {
+    --bg: #0b0b0d;
+    --panel: #141418;
+    --border: #222228;
+    --text: #e8e8ea;
+    --muted: #8a8a92;
+    --accent: #ff6a00;
+    --accent-2: #ffa04d;
+    --danger: #ff4d5e;
+    --ok: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 18px 28px; border-bottom: 1px solid var(--border);
+    background: #101013;
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 {
+    margin: 0; font-size: 18px; letter-spacing: 0.5px;
+  }
+  header h1 span { color: var(--accent); }
+  .user-box { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--muted); }
+  button {
+    background: var(--accent); color: #000; border: none;
+    padding: 9px 16px; border-radius: 6px; cursor: pointer;
+    font-weight: 600; font-size: 14px;
+  }
+  button:hover { background: var(--accent-2); }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  button.danger { background: var(--danger); color: #fff; }
+  main { max-width: 1200px; margin: 32px auto; padding: 0 24px; }
+  #login-screen {
+    text-align: center; padding: 80px 20px;
+  }
+  #login-screen h2 { font-size: 28px; margin-bottom: 12px; }
+  #login-screen p { color: var(--muted); margin-bottom: 28px; }
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--panel);
+  }
+  .drop-zone.drag { border-color: var(--accent); background: #1a1410; color: var(--text); }
+  .drop-zone p { margin: 8px 0; }
+  .drop-zone strong { color: var(--accent); }
+  #file-input { display: none; }
+  .status { margin: 20px 0; padding: 12px 16px; border-radius: 6px; font-size: 14px; }
+  .status.ok { background: rgba(52,211,153,0.1); color: var(--ok); border: 1px solid rgba(52,211,153,0.3); }
+  .status.err { background: rgba(255,77,94,0.1); color: var(--danger); border: 1px solid rgba(255,77,94,0.3); }
+  .upload-progress { margin: 12px 0; font-size: 13px; color: var(--muted); }
+  .grid {
+    margin-top: 32px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .card .thumb {
+    aspect-ratio: 1;
+    background: #000 center/contain no-repeat;
+    border-bottom: 1px solid var(--border);
+  }
+  .card .info { padding: 10px 12px; font-size: 12px; }
+  .card .name {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--text); margin-bottom: 6px;
+  }
+  .card .meta { color: var(--muted); font-size: 11px; margin-bottom: 8px; }
+  .card .actions { display: flex; gap: 6px; }
+  .card .actions button { padding: 6px 10px; font-size: 12px; flex: 1; }
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin: 24px 0 8px;
+  }
+  .toolbar h3 { margin: 0; font-size: 16px; color: var(--muted); font-weight: 500; }
+  .hidden { display: none !important; }
+  a { color: var(--accent-2); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>KC <span>Assets</span></h1>
+  <div class="user-box" id="user-box">
+    <span id="user-email"></span>
+    <button class="ghost" id="logout-btn" style="display:none">Sign out</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- LOGIN -->
+  <section id="login-screen">
+    <h2>Sign in to upload images</h2>
+    <p>Admin access only.</p>
+    <button id="login-btn">Sign in with Google</button>
+    <div id="login-error" class="status err hidden" style="margin-top:20px;"></div>
+  </section>
+
+  <!-- DASHBOARD -->
+  <section id="dashboard" class="hidden">
+    <div class="drop-zone" id="drop-zone">
+      <p><strong>Click to upload</strong> or drag & drop images here</p>
+      <p style="font-size:12px;">PNG · JPG · WEBP · GIF · SVG · max 25MB each</p>
+      <input type="file" id="file-input" multiple accept="image/*" />
+    </div>
+
+    <div id="upload-status"></div>
+
+    <div class="toolbar">
+      <h3>Your images (<span id="count">0</span>)</h3>
+      <button class="ghost" id="refresh-btn">Refresh</button>
+    </div>
+
+    <div class="grid" id="grid"></div>
+    <p id="empty-msg" class="hidden" style="text-align:center; color:var(--muted); padding:40px;">
+      No images yet. Upload your first one above.
+    </p>
+  </section>
+
+</main>
+
+<script type="module" src="./auth-config.js"></script>
+</body>
+</html>
