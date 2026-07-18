@@ -44,3 +44,4 @@ export async function verifyAuth(request) {
     return { ok: false, error: "Verify failed: " + e.message };
   }
 }
+
