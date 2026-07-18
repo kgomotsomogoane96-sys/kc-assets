@@ -1,6 +1,8 @@
 export async function onRequestGet(context) {
   const { env, params } = context;
-  const key = params.key;
+  const key = Array.isArray(params.path) ? params.path.join("/") : params.path;
+
+  if (!key) return new Response("Missing key", { status: 400 });
 
   const obj = await env.ASSETS.get(key);
   if (!obj) return new Response("Not found", { status: 404 });
